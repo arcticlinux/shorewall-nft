@@ -1,10 +1,12 @@
 name: EL10 RPM
 
 # Build the shorewall-nft RPM on AlmaLinux 10 so its dependencies and %{_sbindir}
-# match an EL10 server. Runs on a push to this branch.
+# match an EL10 server. Runs on a push to this branch or a v* tag.
 on:
   push:
     branches: [el10-build]
+    # A tag such as v0.3.10-2 also publishes the RPMs as a GitHub Release.
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -53,3 +55,32 @@ jobs:
         with:
           name: rpm-el10
           path: dist/*.rpm
+
+  release:
+    name: Attach the RPMs to a release
+    needs: rpm
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpm-el10
+          path: dist
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum *.rpm > SHA256SUMS
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # A re-run on the same tag replaces the assets instead of failing.
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber *.rpm SHA256SUMS
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+              --notes "EL10 build of shorewall-nft with the SELinux subpackage. Built by GitHub Actions on AlmaLinux 10; the RPMs are unsigned, verify them against SHA256SUMS." \
+              *.rpm SHA256SUMS
+          fi
