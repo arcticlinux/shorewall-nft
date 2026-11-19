@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros python3 nftables
+        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros selinux-policy-devel make bzip2 python3 nftables
 
       - name: Build the source tarball
         run: |
@@ -42,6 +42,9 @@ jobs:
           shorewall version
           shorewall compile tests/corpus/0003-two-interfaces/config -o /tmp/out.nft
           test -s /tmp/out.nft
+          # The policy module compiled and is packaged; it cannot be loaded in a container.
+          rpm -qpl dist/shorewall-nft-selinux-*.rpm | grep -E 'shorewall_nft\.pp\.bz2$'
+          rpm -qp --scripts dist/shorewall-nft-selinux-*.rpm | grep -c semodule
           bin=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' /usr/lib/systemd/system/shorewall.service)
           echo "unit ExecStart binary: $bin"
           test -x "$bin"

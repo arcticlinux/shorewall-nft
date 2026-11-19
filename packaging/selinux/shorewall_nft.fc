@@ -1,0 +1,2 @@
+/var/lib/shorewall-nft(/.*)?	gen_context(system_u:object_r:shorewall_var_lib_t,s0)
+/run/shorewall-nft(/.*)?	gen_context(system_u:object_r:shorewall_nft_runtime_t,s0)

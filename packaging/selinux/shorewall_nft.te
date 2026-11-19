@@ -1,0 +1,20 @@
+policy_module(shorewall_nft, 1.0.0)
+
+# shorewall-nft keeps its compiled firewall script and saved rulesets under
+# /var/lib/shorewall-nft (labelled shorewall_var_lib_t in the .fc file, the type
+# the distribution policy already gives the iptables Shorewall) and its
+# transient state under /run/shorewall-nft, which gets its own type here.
+
+gen_require(`
+	type shorewall_t;
+')
+
+type shorewall_nft_runtime_t;
+files_type(shorewall_nft_runtime_t)
+
+manage_dirs_pattern(shorewall_t, shorewall_nft_runtime_t, shorewall_nft_runtime_t)
+manage_files_pattern(shorewall_t, shorewall_nft_runtime_t, shorewall_nft_runtime_t)
+
+# Lets "mkdir /run/shorewall-nft" from shorewall_t create the directory with
+# the runtime type; this interface also grants the write on the /run directory.
+files_pid_filetrans(shorewall_t, shorewall_nft_runtime_t, dir, "shorewall-nft")
