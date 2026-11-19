@@ -1,7 +1,7 @@
-name: EL10 RPM
+name: EL RPM
 
-# Build the shorewall-nft RPM on AlmaLinux 10 so its dependencies and %{_sbindir}
-# match an EL10 server. Runs on a push to this branch or a v* tag.
+# Build the shorewall-nft RPM on AlmaLinux and Rocky Linux 9 and 10 so its
+# dependencies and %{_sbindir} match each server. Runs on a push to this branch or a v* tag.
 on:
   push:
     branches: [el10-build]
@@ -11,8 +11,17 @@ on:
 
 jobs:
   rpm:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    container: almalinux:10
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: alma9,  image: 'almalinux:9',  dist_suffix: .alma}
+          - {name: alma10, image: 'almalinux:10', dist_suffix: .alma}
+          - {name: rocky9,  image: 'rockylinux/rockylinux:9'}
+          - {name: rocky10, image: 'rockylinux/rockylinux:10'}
     steps:
       # git must be present before checkout, or actions/checkout falls back to
       # an API tarball with no .git and git archive cannot run.
@@ -22,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros selinux-policy-devel make bzip2 python3 python3-devel nftables
+        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros systemd systemd-devel selinux-policy-devel make bzip2 python3 python3-devel nftables
 
       - name: Build the source tarball
         run: |
@@ -33,14 +42,16 @@ jobs:
             -o "$HOME/rpmbuild/SOURCES/shorewall-nft-$v.tar.gz" HEAD
 
       - name: Build the .rpm
-        run: rpmbuild -bb packaging/shorewall-nft.spec
+        # Rocky builds keep the plain .el9 or .el10 tag. Alma builds add .alma
+        # (shorewall-nft-0.3.10-4.el10.alma), so the two never share a file name.
+        run: rpmbuild -bb --define "dist $(rpm -E %{dist})${{ matrix.dist_suffix }}" packaging/shorewall-nft.spec
 
       - name: Collect and smoke-test
         run: |
           mkdir -p dist
           cp "$HOME"/rpmbuild/RPMS/noarch/*.rpm dist/
           rpm -qpR dist/shorewall-nft-0*.rpm | grep -v '^rpmlib'
-          dnf -y install ./dist/shorewall-nft-0*.rpm
+          dnf -y install ./dist/shorewall-nft-0*.rpm ./dist/shorewall-nft-selinux-*.rpm
           shorewall version
           shorewall compile tests/corpus/0003-two-interfaces/config -o /tmp/out.nft
           test -s /tmp/out.nft
@@ -51,9 +62,14 @@ jobs:
           echo "unit ExecStart binary: $bin"
           test -x "$bin"
 
+      # GitHub runs JavaScript actions with the runner's own node; act does not.
+      - name: Install node for act
+        if: ${{ env.ACT }}
+        run: dnf -y install nodejs
+
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm-el10
+          name: rpm-${{ matrix.name }}
           path: dist/*.rpm
 
   release:
@@ -66,7 +82,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: rpm-el10
+          pattern: rpm-*
+          merge-multiple: true
           path: dist
 
       - name: Create or update the release
@@ -81,6 +98,6 @@ jobs:
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber *.rpm SHA256SUMS
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
-              --notes "EL10 build of shorewall-nft with the SELinux subpackage. Built by GitHub Actions on AlmaLinux 10; the RPMs are unsigned, verify them against SHA256SUMS." \
+              --notes "Builds of shorewall-nft with the SELinux subpackage for Rocky Linux 9 and 10 (el9 and el10 in the file names) and AlmaLinux 9 and 10 (el9.alma and el10.alma). Built by GitHub Actions; the RPMs are unsigned, verify them against SHA256SUMS." \
               *.rpm SHA256SUMS
           fi

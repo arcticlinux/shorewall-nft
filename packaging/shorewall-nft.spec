@@ -3,7 +3,7 @@
 
 Name:           shorewall-nft
 Version:        0.3.10
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Shorewall firewall compiler for nftables
 
 License:        GPL-2.0-only
@@ -11,8 +11,12 @@ URL:            https://github.com/sol1/shorewall-nft
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      noarch
 
+# Explicit because the shorewall commands are /bin/sh wrappers that run
+# python3 -m, so the automatic /usr/bin/python3 shebang dependency never appears.
 Requires:       python3 >= 3.7
 Requires:       nftables
+# Pull in the SELinux policy only where SELinux policy is installed.
+Requires:       (%{name}-selinux = %{version}-%{release} if selinux-policy-%{selinuxtype})
 # Optional: 'shorewall monitor fancy' is an interactive textual app (textual
 # pulls in rich). A scripted 'monitor fancy --once' needs only rich. Neither is
 # required; the classic 'shorewall monitor' uses only the standard library.
@@ -65,7 +69,7 @@ BuildArch:      noarch
 Requires:       %{name} = %{version}-%{release}
 Requires:       selinux-policy-%{selinuxtype}
 Requires(post): selinux-policy-%{selinuxtype}
-%{?selinux_requires}
+%{?selinux_requires_min}
 
 %description selinux
 SELinux policy module for shorewall-nft. The distribution policy knows the
@@ -96,6 +100,13 @@ install -D -m 0644 packaging/selinux/%{modulename}.if \
 # SELinux host shorewall_t cannot write under /usr/share, so every run
 # logs an AVC denial and recompiles the modules.
 %py_byte_compile %{python3} %{buildroot}%{_datadir}/shorewall-nft
+
+%check
+export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=%{buildroot}%{_datadir}/shorewall-nft
+%{python3} -m shorewall_nft version
+%{python3} -m shorewall_nft compile tests/corpus/0003-two-interfaces/config -o %{_tmppath}/shorewall-nft-check.nft
+test -s %{_tmppath}/shorewall-nft-check.nft
+rm -f %{_tmppath}/shorewall-nft-check.nft
 
 %files
 %license LICENSE
@@ -230,6 +241,11 @@ fi
 %systemd_postun shorewall6-lite.service
 
 %changelog
+* Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-4
+- Require shorewall-nft-selinux only where selinux-policy-targeted is
+  installed (rich dependency, as in the Independent Policy guidance).
+- Use %selinux_requires_min, which this subpackage's scriptlets need.
+- Add a %check smoke test: version and a compile of a corpus configuration.
 * Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-3
 - Ship the compiled Python bytecode (py_byte_compile) so shorewall_t does not
   try to write __pycache__ under /usr/share/shorewall-nft and log AVC denials
