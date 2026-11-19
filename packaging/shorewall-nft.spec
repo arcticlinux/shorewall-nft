@@ -1,6 +1,9 @@
+%global selinuxtype targeted
+%global modulename shorewall_nft
+
 Name:           shorewall-nft
 Version:        0.3.10
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Shorewall firewall compiler for nftables
 
 License:        GPL-2.0-only
@@ -26,6 +29,10 @@ Conflicts:      shorewall-core
 
 %{?systemd_requires}
 BuildRequires:  systemd-rpm-macros
+# Compiles the SELinux policy module in the selinux subpackage.
+BuildRequires:  selinux-policy-devel
+BuildRequires:  make
+BuildRequires:  bzip2
 
 %description
 A drop-in replacement for Shorewall that generates nftables rulesets
@@ -50,11 +57,27 @@ deploy the resulting firewall script here, and run it with the
 shorewall-lite command. It needs only a POSIX shell, nft and ip, and
 does not depend on Python.
 
+%package selinux
+Summary:        SELinux policy for shorewall-nft
+BuildArch:      noarch
+Requires:       %{name} = %{version}-%{release}
+Requires:       selinux-policy-%{selinuxtype}
+Requires(post): selinux-policy-%{selinuxtype}
+%{?selinux_requires}
+
+%description selinux
+SELinux policy module for shorewall-nft. The distribution policy knows the
+iptables Shorewall's paths but not shorewall-nft's, so without this module
+/var/lib/shorewall-nft has the wrong label and shorewall_t cannot create
+/run/shorewall-nft on an enforcing system. Install it on SELinux hosts.
+
 %prep
 %autosetup
 
 %build
-# Pure Python; nothing to build.
+# The program is pure Python; only the SELinux policy module is compiled.
+make -C packaging/selinux -f %{_datadir}/selinux/devel/Makefile %{modulename}.pp
+bzip2 -9 packaging/selinux/%{modulename}.pp
 
 %install
 # SBINDIR tracks %{_sbindir}, which is /usr/bin on Fedora 42+ (bin and sbin
@@ -62,6 +85,10 @@ does not depend on Python.
 # %files list looks for them.
 SBINDIR=%{_sbindir} DESTDIR=%{buildroot} packaging/install.sh packaging/shorewallrc.redhat
 SBINDIR=%{_sbindir} DESTDIR=%{buildroot} packaging/install-lite.sh packaging/shorewallrc.redhat
+install -D -m 0644 packaging/selinux/%{modulename}.pp.bz2 \
+    %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+install -D -m 0644 packaging/selinux/%{modulename}.if \
+    %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
 
 %files
 %license LICENSE
@@ -83,6 +110,11 @@ SBINDIR=%{_sbindir} DESTDIR=%{buildroot} packaging/install-lite.sh packaging/sho
 # a fresh install, file by file, only where a file is absent, so an install
 # over an existing configuration never touches it. The skeleton master lives
 # under the share directory.
+
+%files selinux
+%{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{modulename}
 
 %files lite
 %license LICENSE
@@ -162,6 +194,20 @@ for d in shorewall shorewall6; do
 done
 exit 0
 
+%pre selinux
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+
+%postun selinux
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{modulename}
+fi
+
+%posttrans selinux
+%selinux_relabel_post -s %{selinuxtype}
+
 %post lite
 # Register the units but do not enable or start them. Deploy a firewall
 # and run `shorewall-lite start` when ready.
@@ -177,6 +223,11 @@ exit 0
 %systemd_postun shorewall6-lite.service
 
 %changelog
+* Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-2
+- Add the shorewall-nft-selinux subpackage: a policy module that labels
+  /var/lib/shorewall-nft shorewall_var_lib_t and gives /run/shorewall-nft its
+  own type, so shorewall_t can chmod the first and create the second on an
+  enforcing EL10 host.
 * Wed Nov 11 2026 Dave Kempe <dave@sol1.com.au> - 0.3.10-1
 - INVALID_DISPOSITION is honored: an INVALID packet that matches no INVALID
   rule takes A_DROP, A_REJECT, DROP, REJECT or CONTINUE, applied after the
