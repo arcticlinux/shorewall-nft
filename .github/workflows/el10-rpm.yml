@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros selinux-policy-devel make bzip2 python3 nftables
+        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros selinux-policy-devel make bzip2 python3 python3-devel nftables
 
       - name: Build the source tarball
         run: |

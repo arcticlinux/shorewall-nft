@@ -3,7 +3,7 @@
 
 Name:           shorewall-nft
 Version:        0.3.10
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Shorewall firewall compiler for nftables
 
 License:        GPL-2.0-only
@@ -33,6 +33,8 @@ BuildRequires:  systemd-rpm-macros
 BuildRequires:  selinux-policy-devel
 BuildRequires:  make
 BuildRequires:  bzip2
+# Provides the py_byte_compile macro that ships the .pyc files in the package.
+BuildRequires:  python3-devel
 
 %description
 A drop-in replacement for Shorewall that generates nftables rulesets
@@ -89,6 +91,11 @@ install -D -m 0644 packaging/selinux/%{modulename}.pp.bz2 \
     %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
 install -D -m 0644 packaging/selinux/%{modulename}.if \
     %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
+
+# Ship the compiled bytecode. Otherwise the first run writes it, and on an
+# SELinux host shorewall_t cannot write under /usr/share, so every run
+# logs an AVC denial and recompiles the modules.
+%py_byte_compile %{python3} %{buildroot}%{_datadir}/shorewall-nft
 
 %files
 %license LICENSE
@@ -223,6 +230,10 @@ fi
 %systemd_postun shorewall6-lite.service
 
 %changelog
+* Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-3
+- Ship the compiled Python bytecode (py_byte_compile) so shorewall_t does not
+  try to write __pycache__ under /usr/share/shorewall-nft and log AVC denials
+  on an enforcing host.
 * Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-2
 - Add the shorewall-nft-selinux subpackage: a policy module that labels
   /var/lib/shorewall-nft shorewall_var_lib_t and gives /run/shorewall-nft its
