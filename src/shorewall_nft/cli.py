@@ -22,6 +22,7 @@ from .compile import compile_config
 from .emit import table_for
 from .errors import ConfigError
 from .reader import read_simple_vars
+from .script import state_dir_default
 
 
 def _family():
@@ -1923,7 +1924,7 @@ NOT_IMPLEMENTED = {
 def _state_dir():
     # The wrapper's runtime state, where provider .state files live. This
     # is the wrapper's $STATE, distinct from the compiled-artifact vardir.
-    return os.environ.get("SWNFT_STATE", "/var/run/shorewall-nft")
+    return os.environ.get("SWNFT_STATE", state_dir_default(_family()))
 
 
 def _provider_disabled(name):
