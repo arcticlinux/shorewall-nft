@@ -7,6 +7,7 @@ policy_module(shorewall_nft, 1.0.0)
 
 gen_require(`
 	type shorewall_t;
+	type init_t;
 ')
 
 type shorewall_nft_runtime_t;
@@ -18,3 +19,11 @@ manage_files_pattern(shorewall_t, shorewall_nft_runtime_t, shorewall_nft_runtime
 # Lets "mkdir /run/shorewall-nft" from shorewall_t create the directory with
 # the runtime type; this interface also grants the write on the /run directory.
 files_pid_filetrans(shorewall_t, shorewall_nft_runtime_t, dir, "shorewall-nft")
+files_pid_filetrans(shorewall_t, shorewall_nft_runtime_t, dir, "shorewall6-nft")
+
+# With RuntimeDirectory=shorewall-nft in the units, systemd (init_t) creates the
+# directory at start and removes it and its contents at stop.
+manage_dirs_pattern(init_t, shorewall_nft_runtime_t, shorewall_nft_runtime_t)
+manage_files_pattern(init_t, shorewall_nft_runtime_t, shorewall_nft_runtime_t)
+files_pid_filetrans(init_t, shorewall_nft_runtime_t, dir, "shorewall-nft")
+files_pid_filetrans(init_t, shorewall_nft_runtime_t, dir, "shorewall6-nft")

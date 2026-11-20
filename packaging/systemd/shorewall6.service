@@ -9,6 +9,11 @@ After=network-online.target
 Conflicts=firewalld.service ufw.service
 
 [Service]
+# IPv6 keeps its state apart from IPv4 (default.save would collide), as the
+# shorewall-lite wrappers do with /run/$prog.
+RuntimeDirectory=shorewall6-nft
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/shorewall6 start

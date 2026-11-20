@@ -6,6 +6,12 @@ After=shorewall.service
 Wants=shorewall.service
 
 [Service]
+# /run/shorewall-nft is shared by shorewall and shorewall-lsm (both IPv4). systemd
+# creates it for each, but does not count users: without Preserve, stopping any
+# one unit would delete the state (default.save, providers/) the others still use.
+RuntimeDirectory=shorewall-nft
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
 Type=simple
 ExecStart=/usr/sbin/shorewall lsm
 Restart=on-failure

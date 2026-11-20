@@ -3,7 +3,7 @@
 
 Name:           shorewall-nft
 Version:        0.3.10
-Release:        4%{?dist}
+Release:        7%{?dist}
 Summary:        Shorewall firewall compiler for nftables
 
 License:        GPL-2.0-only
@@ -15,6 +15,7 @@ BuildArch:      noarch
 # python3 -m, so the automatic /usr/bin/python3 shebang dependency never appears.
 Requires:       python3 >= 3.7
 Requires:       nftables
+Requires:       iproute
 # Pull in the SELinux policy only where SELinux policy is installed.
 Requires:       (%{name}-selinux = %{version}-%{release} if selinux-policy-%{selinuxtype})
 # Optional: 'shorewall monitor fancy' is an interactive textual app (textual
@@ -81,6 +82,12 @@ iptables Shorewall's paths but not shorewall-nft's, so without this module
 %autosetup
 
 %build
+# On EL9 the policy treats /run as an alias of /var/run (file_contexts.subs_dist
+# has "/run /var/run"), so a rule for /run/... is never selected. EL10 reverses
+# the alias, so there /run is the right spelling.
+%if 0%{?rhel} && 0%{?rhel} < 10
+sed -i 's|^/run/shorewall|/var/run/shorewall|' packaging/selinux/%{modulename}.fc
+%endif
 # The program is pure Python; only the SELinux policy module is compiled.
 make -C packaging/selinux -f %{_datadir}/selinux/devel/Makefile %{modulename}.pp
 bzip2 -9 packaging/selinux/%{modulename}.pp
@@ -241,6 +248,23 @@ fi
 %systemd_postun shorewall6-lite.service
 
 %changelog
+* Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-7
+- Test build: shorewall6 keeps its runtime state in /run/shorewall6-nft, not in
+  /run/shorewall-nft with shorewall. Both wrote default.save there, so the IPv6
+  default route replaced the IPv4 one. The compiler and the CLI default the state
+  directory by family; the unit and the SELinux policy follow.
+
+* Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-6
+- Test build: add RuntimeDirectoryPreserve=yes. On EL9 with SELinux enforcing,
+  stopping shorewall or shorewall6 removed /run/shorewall-nft while the other
+  unit still ran, because systemd does not count users of a shared directory.
+
+* Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-5
+- Test build: the units set RuntimeDirectory=shorewall-nft, so systemd creates
+  /run/shorewall-nft and removes it when the last unit using it stops. The policy
+  lets init_t clean up the shorewall_nft_runtime_t type.
+- Write the /run file context as /var/run on EL9, where /run is the alias.
+- Require iproute; the routing code runs ip.
 * Thu Nov 19 2026 Arctic Linux <noreply@arcticlinux.com> - 0.3.10-4
 - Require shorewall-nft-selinux only where selinux-policy-targeted is
   installed (rich dependency, as in the Independent Policy guidance).
