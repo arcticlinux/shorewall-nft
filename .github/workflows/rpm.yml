@@ -1,0 +1,98 @@
+name: EL RPM
+
+# Build the shorewall-nft RPM for EL10, in an AlmaLinux 10 container, so its
+# dependencies and %{_sbindir} match the server. Runs on a push to this branch or a v* tag.
+on:
+  push:
+    branches: [el10-build]
+    # A tag such as v0.4.0-1 also publishes the RPMs as a GitHub Release.
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  rpm:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: el10, image: 'almalinux:10'}
+    steps:
+      # git must be present before checkout, or actions/checkout falls back to
+      # an API tarball with no .git and git archive cannot run.
+      - name: Install git
+        run: dnf -y install git
+
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf -y install rpm-build rpmdevtools systemd-rpm-macros systemd systemd-devel selinux-policy-devel make bzip2 python3 python3-devel nftables
+
+      - name: Build the source tarball
+        run: |
+          rpmdev-setuptree
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          v=$(awk '/^Version:/{print $2}' packaging/shorewall-nft.spec)
+          git archive --format=tar.gz --prefix="shorewall-nft-$v/" \
+            -o "$HOME/rpmbuild/SOURCES/shorewall-nft-$v.tar.gz" HEAD
+
+      - name: Build the .rpm
+        run: rpmbuild -bb packaging/shorewall-nft.spec
+
+      - name: Collect and smoke-test
+        run: |
+          mkdir -p dist
+          cp "$HOME"/rpmbuild/RPMS/noarch/*.rpm dist/
+          rpm -qpR dist/shorewall-nft-0*.rpm | grep -v '^rpmlib'
+          dnf -y install ./dist/shorewall-nft-0*.rpm
+          shorewall version
+          shorewall compile tests/corpus/0003-two-interfaces/config -o /tmp/out.nft
+          test -s /tmp/out.nft
+          # The policy module compiled and is packaged in the main RPM; it cannot be loaded in a container.
+          rpm -qpl dist/shorewall-nft-0*.rpm | grep -E 'shorewall_nft\.pp'
+          rpm -qp --scripts dist/shorewall-nft-0*.rpm | grep -c semodule
+          bin=$(sed -n 's/^ExecStart=\([^ ]*\).*/\1/p' /usr/lib/systemd/system/shorewall.service)
+          echo "unit ExecStart binary: $bin"
+          test -x "$bin"
+
+      # GitHub runs JavaScript actions with the runner's own node; act does not.
+      - name: Install node for act
+        if: ${{ env.ACT }}
+        run: dnf -y install nodejs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.name }}
+          path: dist/*.rpm
+
+  release:
+    name: Attach the RPMs to a release
+    needs: rpm
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rpm-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum *.rpm > SHA256SUMS
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # A re-run on the same tag replaces the assets instead of failing.
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber *.rpm SHA256SUMS
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+              --notes "Build of shorewall-nft for EL10. Built by GitHub Actions; the RPMs are unsigned, verify them against SHA256SUMS." \
+              *.rpm SHA256SUMS
+          fi
